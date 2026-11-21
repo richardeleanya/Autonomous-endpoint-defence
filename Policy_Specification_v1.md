@@ -68,7 +68,7 @@ TIER        := "T0" | "T1" | "T2" | "T3"
 1. Validate inputs (schema + bounds); invalid input -> DENY (reason INVALID_INPUT).
 2. Evaluate rules R0..R11 in numeric order.
 3. Each rule emits one outcome with rule ID.
-4. Combine: **DENY overrides all**; then ESCALATE overrides ALLOW/DOWNGRADE; then the most restrictive DOWNGRADE (highest tier number? lower tier) overrides ALLOW; ALLOW only if no rule denied/escalated/downgraded.
+4. Combine: **DENY overrides all**; then ESCALATE overrides ALLOW/DOWNGRADE; then the DOWNGRADE to the lowest tier overrides ALLOW; ALLOW only if no rule denied/escalated/downgraded.
    - Precedence (most to least): DENY > ESCALATE > DOWNGRADE > ALLOW.
 5. If multiple DOWNGRADE, choose the lowest tier (most restrictive).
 6. Final outcome carries the set of contributing rule IDs and the primary reason code (first denying/escalating/downgrading rule in order).
@@ -97,7 +97,7 @@ Every rule in §2 cites at least one SEC-xxx (POL-013).
 | R3 | origin contains only AI/LLM evidence and tier >= T2 | DOWNGRADE(T1) reason AI_EVIDENCE_ONLY | SEC-036, SEC-037 |
 | R4 | confidence < policy.threshold_for(action) | DOWNGRADE(T1) reason LOW_CONFIDENCE | SEC-005 |
 | R5 | tier >= T2 and asset.critical == false | require distinct attested peers >= policy.k else DOWNGRADE(T1) reason INSUFFICIENT_CORROBORATION | SEC-005, SEC-006, SEC-017 |
-| R6 | target in protected_allowlist | DENY reason PROTECTED_TARGET | SEC-007, SEC-023 |
+| R6 | resolved target matches protected_allowlist | DENY reason PROTECTED_TARGET regardless of human approval | SEC-007, SEC-023 |
 | R7 | mode != online and tier >= T3 | DENY reason OFFLINE_NO_T3 | SEC-015, ARC-009 |
 | R8 | tier == T2 and mode != online and (mode != partitioned or no valid scoped lease or required dependency unavailable) | DENY reason NOT_LEASED | SEC-028, ARC-009 |
 | R9 | trust_level == L1 and tier >= T2 | DENY reason TRUST_LEVEL_TOO_LOW | PRO-007, SEC-002 |
@@ -106,12 +106,12 @@ Every rule in §2 cites at least one SEC-xxx (POL-013).
 
 **Required example (POL-T-017):**
 ```
-rule R6 (corroboration)
+rule R5 (corroboration)
 when tier >= T2 and asset.critical = false
 require distinct attested peers >= policy.k
 else DOWNGRADE(T1) reason INSUFFICIENT_CORROBORATION
 ```
-Test POL-T-017: input isolate_host, confidence 0.92, peers 1, k 2, asset non-critical, mode online -> expected DOWNGRADE(T1), rules R6, reason INSUFFICIENT_CORROBORATION. (Note: in our numbering this is R5; the example's "R6" label is preserved as the corroboration rule alias. We keep both: corroboration rule is R5 in this spec, aliased R6 in the example for compatibility.)
+Test POL-T-017: input isolate_host, confidence 0.92, peers 1, k 2, asset non-critical, mode online -> expected DOWNGRADE(T1), rule R5, reason INSUFFICIENT_CORROBORATION.
 
 ---
 
@@ -167,7 +167,8 @@ Columns: ID | Action | Platforms | Tier | Recovery | Required evidence | Default
 
 ### 4.2 Protected allowlist model
 - A signed list of protected processes/paths/assets (business-critical).
-- Any action targeting an allowlisted item is DENY (R6) unless an explicit human-approved override token is present.
+- An active allowlist match makes R6 emit DENY with PROTECTED_TARGET. The final outcome is DENY and §1.3 determines the primary reason when multiple rules deny. Human approval satisfies the applicable R2 gate only. The controller rejects a protected target with PROTECTED_TARGET even if the existing decision says ALLOW.
+- Changes to the allowlist require the signed policy change process in §6. A per-action override token has no authority under this contract.
 - Allowlist is distributed via signed policy bundle and versioned.
 
 ### 4.3 Fleet-budget semantics
@@ -196,7 +197,7 @@ Each invariant states an attack and a property test.
 | INV-6 | Bounded evaluation time | Deeply nested condition | Evaluation terminates within budget for all valid inputs |
 | INV-7 | No T2+ on critical assets without human approval | Auto-remediate critical host | If asset.critical and tier>=T2 and !human_approved -> not ALLOW |
 | INV-8 | Offline profile only leased actions | Unleased action under partition | For T2 in a non-online mode, deny unless partitioned with a valid scoped lease and all required dependencies available |
-| INV-9 | Protected allowlist never auto-remediated | Target allowlisted process | If target in allowlist and no override token -> DENY |
+| INV-9 | Protected target always denied | An approval or proposed override accompanies a protected target | An allowlist match causes DENY with R6 as a contributing rule even with human approval |
 | INV-10 | Corroboration uses distinct devices | Same device counted twice | distinct_count(peers) >= k required; duplicate device_id collapses |
 | INV-11 | Confidence threshold enforced | Low-confidence action | If confidence < threshold -> not ALLOW at proposed tier |
 | INV-12 | Invalid/expired policy fail-closed | Tampered policy | If policy invalid/expired -> T2+ DENY |
@@ -226,7 +227,7 @@ Format: ID | Input (summary) | Expected outcome | Rules | Reason.
 | POL-T-001 | T0 collect_forensics, any mode | ALLOW | R0 | T0_ALWAYS |
 | POL-T-002 | Invalid proposal signature | DENY | R1 | INVALID_PROPOSAL |
 | POL-T-003 | Critical asset, T2, no human approval | DENY | R2 | CRITICAL_ASSET_PROTECTED |
-| POL-T-004 | Critical asset, T2, human approved | ALLOW (if others pass) | R2 pass | - |
+| POL-T-004 | Critical asset outside protected allowlist, T2, human approved | ALLOW (if others pass) | R2 pass | - |
 | POL-T-005 | AI-only evidence, T2 | DOWNGRADE(T1) | R3 | AI_EVIDENCE_ONLY |
 | POL-T-006 | Confidence 0.70 < 0.85 threshold | DOWNGRADE(T1) | R4 | LOW_CONFIDENCE |
 | POL-T-007 | Non-critical, T2, peers 2 >= k 2, online | ALLOW | R5 pass | - |
@@ -249,7 +250,7 @@ Format: ID | Input (summary) | Expected outcome | Rules | Reason.
 | POL-T-024 | Suspected node mode, T2 action | DENY | R8 | NOT_LEASED |
 | POL-T-025 | Human-approved T3 online | ALLOW (if others pass) | R2 pass | - |
 | POL-T-026 | Non-critical, T2, peers 3, k 2 | ALLOW | R5 pass | - |
-| POL-T-027 | Protected allowlist + override token | ALLOW (if others pass) | R6 pass | - |
+| POL-T-027 | Protected target with otherwise valid human approval | DENY | R6 | PROTECTED_TARGET |
 | POL-T-028 | Budget at exactly limit | DENY (exhausted) | R10 | BUDGET_EXHAUSTED |
 | POL-T-029 | Offline lease expired | DENY | R8 | NOT_LEASED |
 | POL-T-030 | AI evidence + corroborating human evidence, T2 | ALLOW (if others pass) | R3 pass | - |
@@ -264,7 +265,7 @@ Format: ID | Input (summary) | Expected outcome | Rules | Reason.
 | POL-T-039 | Bounded eval: deeply nested input | Terminates within budget | - | - |
 | POL-T-040 | Determinism: repeated eval | Same output | - | - |
 | POL-T-041 | Partitioned lease with partial spend and all policy gates met | ALLOW until exhausted | R8/R10 | - |
-| POL-T-042 | Protected target with override expired | DENY | R6 | PROTECTED_TARGET |
+| POL-T-042 | Protected noncritical, non-bulk T2 target with expired approval | DENY | R6 | PROTECTED_TARGET |
 
 **Test case count: 42 (>=40).** All deterministic by construction (pure function, no clock reads except supplied trusted_time).
 

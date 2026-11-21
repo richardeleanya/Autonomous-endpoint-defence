@@ -62,11 +62,14 @@ finish() {
     [[ ! -s "$evidence/git-status-after.txt" ]] || evidence_status=1
   fi
   if (( status == 0 && evidence_status != 0 )); then status=1; fi
-  printf 'mode=%s\nstage=%s\ntest_exit=%s\nevidence_or_cleanup_exit=%s\nexit=%s\n' \
-    "$mode" "$stage" "$test_exit" "$evidence_status" "$status" > "$evidence/result.txt"
-  if ! (cd "$evidence" && shopt -s nullglob && sha256sum -- *.txt *.log > SHA256SUMS); then
+  local result_format='mode=%s\nstage=%s\ntest_exit=%s\nevidence_or_cleanup_exit=%s\nexit=%s\n'
+  if ! printf "$result_format" "$mode" "$stage" "$test_exit" "$evidence_status" "$status" > "$evidence/result.txt" \
+     || ! (cd "$evidence" && shopt -s nullglob && sha256sum -- *.txt *.log > SHA256SUMS); then
     echo 'Could not write evidence checksums.' >&2
+    evidence_status=1
     if (( status == 0 )); then status=1; fi
+    rm -f -- "$evidence/SHA256SUMS"
+    printf "$result_format" "$mode" "$stage" "$test_exit" "$evidence_status" "$status" > "$evidence/result.txt"
   fi
   printf 'Docker check exit %s (%s). Evidence: %s\n' "$status" "$stage" "$evidence"
   exit "$status"

@@ -1,0 +1,11 @@
+services:
+  api:
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ADA_PORT:-8443}:8443"
+    networks:
+      ingress: {}
+  worker:
+    restart: unless-stopped
+networks:
+  ingress: {}

@@ -96,6 +96,8 @@ message Target {
 
 ### 2.2 Decision
 
+The Decision message below describes the evaluator outcome. Signed privileged execution decisions and signed human approvals use the [v1 execution binding contract](contracts/v1/ENFORCEMENT.md). Its executable validator enforces exact scope, approval digest, wire version and authenticated envelope metadata.
+
 ```protobuf
 message Decision {
   string decision_id = 1;       // O
@@ -133,6 +135,8 @@ message Observation {
 ```
 
 ### 2.4 Remediation Token
+
+The fields below describe the base token shape. Production token issuance for privileged execution additionally requires an authenticated reference to the canonical execution decision digest under PRO-011. Reserved protobuf tags remain reserved. The token schema and token consumption are required for controller qualification.
 
 ```protobuf
 message RemediationToken {

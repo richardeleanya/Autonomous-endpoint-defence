@@ -1,0 +1,63 @@
+x-runtime: &runtime
+  build:
+    context: ../product/control_plane
+    additional_contexts:
+      wheelhouse: ${ADA_WHEELHOUSE:?Set the verified Python wheel directory}
+    args:
+      RUNTIME_UID: ${ADA_RUNTIME_UID:-10001}
+  init: true
+  read_only: true
+  tmpfs: ["/tmp"]
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+services:
+  api:
+    <<: *runtime
+    environment:
+      ADA_API_HOSTNAME: ${ADA_API_HOSTNAME:-api}
+    networks:
+      default:
+        aliases:
+          - ${ADA_API_HOSTNAME:-api}
+    command: ["gunicorn", "--preload", "--workers=2", "--bind=0.0.0.0:8443", "--certfile=/secrets/tls.crt", "--keyfile=/secrets/tls.key", "api:application"]
+    volumes:
+      - data:/data
+      - artifacts:/artifacts
+      - ${ADA_CONFIG_DIR:?Set the private configuration directory}/tenants.json:/secrets/tenants.json:ro
+      - ${ADA_CONFIG_DIR}/tls.crt:/secrets/tls.crt:ro
+      - ${ADA_CONFIG_DIR}/tls.key:/secrets/tls.key:ro
+      - ${ADA_CONFIG_DIR}/ca.crt:/secrets/ca.crt:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,ssl,urllib.request; opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile='/secrets/ca.crt'))); opener.open('https://' + os.environ['ADA_API_HOSTNAME'] + ':8443/health', timeout=3).close()"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+  worker:
+    <<: *runtime
+    command: ["python", "-m", "worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - data:/data
+      - artifacts:/artifacts
+      - ${ADA_CONFIG_DIR}/tenants.json:/secrets/tenants.json:ro
+  integration-tests:
+    profiles: ["qualification"]
+    image: python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+    read_only: true
+    tmpfs: ["/tmp"]
+    command: ["python", "-B", "/checks/test_isolation.py", "-v"]
+    volumes:
+      - ../test/product/test_isolation.py:/checks/test_isolation.py:ro
+      - ../product/control_plane/store.py:/checks/store.py:ro
+      - ../product/control_plane/customer_ops.py:/checks/customer_ops.py:ro
+      - ${ADA_NATIVE_DIR:-../test/product}:/native:ro
+      - ${ADA_CONFIG_DIR}/clients.json:/checks/clients.json:ro
+      - ${ADA_CONFIG_DIR}/ca.crt:/checks/ca.crt:ro
+networks:
+  default:
+    internal: true
+volumes:
+  data:
+  artifacts:

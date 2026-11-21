@@ -55,6 +55,8 @@ repo/
 
 ## 2. Branch protection and review rules
 
+Use the [release controls](release/README.md) to bind protected-ref review and external CI results to the exact promoted build.
+
 - **Protected branches:** `main`, `release/*`. No direct pushes; PR required.
 - **Reviews:** At least 2 approvals for TCB components; 1 approval for non-TCB (but TCB changes require security review).
 - **Code owners:** TCB paths owned by security + architecture leads; changes require their approval.

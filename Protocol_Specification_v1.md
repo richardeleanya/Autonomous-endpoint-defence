@@ -93,7 +93,7 @@
 | suite_id | enum | Algorithm suite selector (PRO-017) |
 | tenant_id | UUID | Tenant scope |
 | sender_id | UUID | Device or service identity |
-| message_type | enum | OBSERVATION, CORROBORATION_REQUEST, DECISION_PROPOSAL, POLICY_BUNDLE, UPDATE_MANIFEST, REMEDIATION_TOKEN, LEASE, REVOCATION, HEARTBEAT |
+| message_type | enum | OBSERVATION, CORROBORATION_REQUEST, DECISION_PROPOSAL, EXECUTION_DECISION, HUMAN_APPROVAL, POLICY_BUNDLE, UPDATE_MANIFEST, REMEDIATION_TOKEN, LEASE, REVOCATION, HEARTBEAT |
 | nonce | 128-bit | Unique per sender within replay window |
 | issued_at | timestamp (UTC) | Issuance time |
 | expires_at | timestamp (UTC) | Expiry time |
@@ -103,6 +103,8 @@
 
 ### 4.2 Canonicalisation
 Fields are serialised in a deterministic order (version, suite_id, tenant_id, sender_id, message_type, nonce, issued_at, expires_at, payload_hash) before hashing/signing. Payload is hashed separately and referenced by payload_hash.
+
+The payload bytes for EXECUTION_DECISION and HUMAN_APPROVAL follow the [v1 execution binding contract](contracts/v1/ENFORCEMENT.md). Verify that the signing identity is authorised for the message type and tenant. The authenticated tenant, message type and validity interval also match the payload.
 
 ### 4.3 Verification order (PRO-009)
 
@@ -167,8 +169,8 @@ Weights are computed locally by the policy engine using signed inputs; weights a
 ## 6. Remediation tokens and offline leases (PRO-011, PRO-012)
 
 ### 6.1 Remediation token
-Fields (in addition to envelope): token_id, action_type, target_id, tier (T2/T3), scope, issued_by, max_uses=1.
-- Issued by policy engine or control plane after approval.
+Fields (in addition to envelope): token_id, decision_sha256, action_type, target_id, tier (T2/T3), scope, issued_by, max_uses=1.
+- The control-plane authorisation service issues the token after verifying the effective execution decision and any required human approval. The token binds to the SHA-256 digest of that canonical execution decision. The policy evaluator returns a pure outcome. The [v1 execution binding contract](contracts/v1/ENFORCEMENT.md) defines the two signed payloads.
 - Single-use; replay rejected (R-REPLAY).
 - Expiry short (TARGET <= 5 minutes for T2; T3 requires fresh human approval).
 - Clock disagreement: if |now - issued_at| > skew bound, reject (R-CLOCK-SKEW) and fail-closed for T2+.
