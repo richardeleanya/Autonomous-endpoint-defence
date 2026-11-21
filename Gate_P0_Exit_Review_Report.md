@@ -117,3 +117,10 @@ Representative chains (threat → SEC → component → protocol → policy → 
 4. **Open questions:** Carried forward as OQs in P0.1–P0.10; see §5 conditions.
 5. **Out-of-scope items noticed (not acted on):** Remediation, redesign, writing P1 prompts.
 6. **Handoff:** Programme may proceed to P1 only after §5 conditions are satisfied. P1 prompts are written after this decision per run protocol.
+
+## Design resolution record
+
+- **FND-001 resolved in design.** ARC-009, POL-007 and PRO-012 require a valid scoped lease for production T2 during partition. The P2.5 degraded integration profile remains capped at T1. P2.2 §4 names the required conformance and reconciliation evidence.
+- **FND-002 resolved in design.** A-18 remains T3/R3. ARC-015 and A-18 link the online approval and customer manual recovery paths in P2.2 §3. P2.2 §4 names the required approval and recovery evidence.
+
+This record closes the two design findings. Other P0 entry conditions and the P2.G evidence gate retain their recorded status.

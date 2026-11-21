@@ -93,13 +93,13 @@ Every rule in §2 cites at least one SEC-xxx (POL-013).
 |---|---|---|---|
 | R0 | tier == T0 | ALLOW | SEC-007, ARC-007 |
 | R1 | proposal invalid or unsigned | DENY reason INVALID_PROPOSAL | SEC-004 |
-| R2 | asset.critical == true and tier >= T2 and not human_approved | DENY reason CRITICAL_ASSET_PROTECTED | SEC-007, SEC-018 |
+| R2 | (tier >= T3 or bulk T2 or critical-asset T2) and no valid scoped human approval | DENY reason CRITICAL_ASSET_PROTECTED for critical assets, otherwise HUMAN_APPROVAL_REQUIRED | SEC-007, SEC-018 |
 | R3 | origin contains only AI/LLM evidence and tier >= T2 | DOWNGRADE(T1) reason AI_EVIDENCE_ONLY | SEC-036, SEC-037 |
 | R4 | confidence < policy.threshold_for(action) | DOWNGRADE(T1) reason LOW_CONFIDENCE | SEC-005 |
 | R5 | tier >= T2 and asset.critical == false | require distinct attested peers >= policy.k else DOWNGRADE(T1) reason INSUFFICIENT_CORROBORATION | SEC-005, SEC-006, SEC-017 |
 | R6 | target in protected_allowlist | DENY reason PROTECTED_TARGET | SEC-007, SEC-023 |
-| R7 | mode in {partitioned, offline} and tier >= T3 | DENY reason OFFLINE_NO_T3 | SEC-015, ARC-009 |
-| R8 | mode in {partitioned, offline} and tier == T2 and action not in leased_budget | DENY reason NOT_LEASED | SEC-028, ARC-009 |
+| R7 | mode != online and tier >= T3 | DENY reason OFFLINE_NO_T3 | SEC-015, ARC-009 |
+| R8 | tier == T2 and mode != online and (mode != partitioned or no valid scoped lease or required dependency unavailable) | DENY reason NOT_LEASED | SEC-028, ARC-009 |
 | R9 | trust_level == L1 and tier >= T2 | DENY reason TRUST_LEVEL_TOO_LOW | PRO-007, SEC-002 |
 | R10 | budget exhausted (fleet or leased) for action | DENY reason BUDGET_EXHAUSTED | SEC-024, SEC-044 |
 | R11 | policy invalid/expired or version mismatch | DENY reason INVALID_POLICY | SEC-004, SEC-030 |
@@ -138,7 +138,7 @@ Columns: ID | Action | Platforms | Tier | Recovery | Required evidence | Default
 | A-15 | remove_launchd_item | macOS (later wave) | T2 | R2 | detection | 0.85 |
 | A-16 | remove_cron_job | Linux | T2 | R2 | detection | 0.85 |
 | A-17 | rollback_change | Win/Linux | T3 | R3 | human approval + evidence | 0.95 |
-| A-18 | restore_file | Win/Linux | T3 | R3 | backup available | 0.95 |
+| A-18 | restore_file | Win/Linux | T3 | R3 | verified backup + scoped human approval per [P2.2 §3](P2.2_Enforcement_Controller_v1.md#3-a-18-recovery-approval) | 0.95 |
 | A-19 | reimage_host | Win/Linux | T3 | R4 | human approval | 1.00 |
 | A-20 | reset_password | Win/Linux | T2 | R2 | identity evidence | 0.90 |
 | A-21 | collect_forensics | Win/Linux | T0 | R1 | none | 0.50 |
@@ -162,8 +162,8 @@ Columns: ID | Action | Platforms | Tier | Recovery | Required evidence | Default
 
 ### 4.1 Offline profile
 - Activated when mode != online.
-- Permits T0 always; T1 local analysis; T2 only if action in leased_budget and budget available; T3 denied (R7).
-- No network-dependent corroboration; local corroboration from cached peer attestations only if within freshness window (TARGET 5 min, HYPOTHESIS).
+- T0 continues. T1 is local where permitted by ARC-009. Only partitioned mode can permit leased T2, with budget available and all other policy gates satisfied. Fully offline and both suspected-compromise modes deny T2+. T3 is denied in all degraded modes (R7).
+- Cached peer attestations cannot replace a required fresh quorum. The P2.5 integration profile retains its T0/T1 ceiling during degraded operation.
 
 ### 4.2 Protected allowlist model
 - A signed list of protected processes/paths/assets (business-critical).
@@ -195,7 +195,7 @@ Each invariant states an attack and a property test.
 | INV-5 | Pure function determinism | Non-deterministic input (time) | f(p,c,pol) == f(p,c,pol) for identical inputs |
 | INV-6 | Bounded evaluation time | Deeply nested condition | Evaluation terminates within budget for all valid inputs |
 | INV-7 | No T2+ on critical assets without human approval | Auto-remediate critical host | If asset.critical and tier>=T2 and !human_approved -> not ALLOW |
-| INV-8 | Offline profile only leased actions | Unleased action under partition | If mode!=online and action not in leased_budget -> DENY |
+| INV-8 | Offline profile only leased actions | Unleased action under partition | For T2 in a non-online mode, deny unless partitioned with a valid scoped lease and all required dependencies available |
 | INV-9 | Protected allowlist never auto-remediated | Target allowlisted process | If target in allowlist and no override token -> DENY |
 | INV-10 | Corroboration uses distinct devices | Same device counted twice | distinct_count(peers) >= k required; duplicate device_id collapses |
 | INV-11 | Confidence threshold enforced | Low-confidence action | If confidence < threshold -> not ALLOW at proposed tier |
@@ -245,8 +245,8 @@ Format: ID | Input (summary) | Expected outcome | Rules | Reason.
 | POL-T-020 | T1 advisory under offline | ALLOW | - | - |
 | POL-T-021 | Confidence exactly at threshold | ALLOW (if others pass) | R4 pass | - |
 | POL-T-022 | Peers distinct count with duplicate device | DOWNGRADE/DENY | R5 | INSUFFICIENT_CORROBORATION |
-| POL-T-023 | Suspected CP mode, T2 leased action | ALLOW if leased | R8 pass | - |
-| POL-T-024 | Suspected node mode, T2 action | DENY | R9/R? | TRUST_LEVEL_TOO_LOW |
+| POL-T-023 | Suspected CP mode, T2 leased action | DENY | R8 | NOT_LEASED |
+| POL-T-024 | Suspected node mode, T2 action | DENY | R8 | NOT_LEASED |
 | POL-T-025 | Human-approved T3 online | ALLOW (if others pass) | R2 pass | - |
 | POL-T-026 | Non-critical, T2, peers 3, k 2 | ALLOW | R5 pass | - |
 | POL-T-027 | Protected allowlist + override token | ALLOW (if others pass) | R6 pass | - |
@@ -257,13 +257,13 @@ Format: ID | Input (summary) | Expected outcome | Rules | Reason.
 | POL-T-032 | Critical asset, T1 (not T2) | ALLOW (if others pass) | R2 pass | - |
 | POL-T-033 | Mode online, T2, peers 0, k 1 | DOWNGRADE(T1) | R5 | INSUFFICIENT_CORROBORATION |
 | POL-T-034 | Invalid policy version | DENY | R11 | INVALID_POLICY |
-| POL-T-035 | Action A-19 reimage, no approval | DENY | R2 | CRITICAL_ASSET_PROTECTED |
+| POL-T-035 | Action A-19 reimage on noncritical asset, no approval | DENY | R2 | HUMAN_APPROVAL_REQUIRED |
 | POL-T-036 | Action A-21 collect_forensics offline | ALLOW | R0 | T0_ALWAYS |
 | POL-T-037 | Dual deny rules present | DENY | R1,R6 | first deny reason |
 | POL-T-038 | Escalate vs downgrade conflict | DENY/ESCALATE per precedence | - | - |
 | POL-T-039 | Bounded eval: deeply nested input | Terminates within budget | - | - |
 | POL-T-040 | Determinism: repeated eval | Same output | - | - |
-| POL-T-041 | Offline leased budget partial spend | ALLOW until exhausted | R8/R10 | - |
+| POL-T-041 | Partitioned lease with partial spend and all policy gates met | ALLOW until exhausted | R8/R10 | - |
 | POL-T-042 | Protected target with override expired | DENY | R6 | PROTECTED_TARGET |
 
 **Test case count: 42 (>=40).** All deterministic by construction (pure function, no clock reads except supplied trusted_time).

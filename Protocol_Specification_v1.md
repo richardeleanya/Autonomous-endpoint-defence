@@ -175,10 +175,10 @@ Fields (in addition to envelope): token_id, action_type, target_id, tier (T2/T3)
 
 ### 6.2 Offline lease
 - Issued while online by control plane; binds a device to a set of permitted autonomous actions under partition.
-- Contains: lease_id, device_id, tenant_id, permitted actions, expiry, max_actions count.
-- On partition, device may execute only leased actions within lease bounds; all others denied.
+- Contains: lease_id, device_id, tenant_id, permitted actions and target scope, policy version, absolute expiry, max_actions count.
+- Only partitioned mode can spend a lease. The controller permits only scoped, pre-authorised local T2 within lease bounds and with every other gate met. Fully offline and suspected-compromise modes deny T2+.
 - Lease expiry is absolute; no extension under partition.
-- On reconnection, lease is re-validated; if control plane suspected compromised, lease is ignored and device reverts to cached policy (ADR-008).
+- On reconnection, lease is re-validated; if control plane suspected compromised, lease is ignored and cached policy supports only permitted non-privileged operation (ADR-008).
 
 ---
 
@@ -244,7 +244,7 @@ Transitions:
 
 ### 8.4 Remediation under partition
 1. Node detects partition (mesh-coordinator).
-2. Policy engine consults offline leases; permits only leased actions.
+2. The policy engine evaluates lease eligibility. The node enforcement controller rechecks the lease and all execution gates before spending budget or invoking an adapter.
 3. All actions logged to local evidence ledger; queued for sync.
 4. On reconnection, leases re-validated; if control plane suspected compromised, leases ignored.
 

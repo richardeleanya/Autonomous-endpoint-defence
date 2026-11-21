@@ -66,7 +66,7 @@ Columns: ID | Gate | Traces | Method | Expected result.
 | TST-G3-002 | G3 | SEC-005, SEC-017 | Scenario: colluding peers | Quorum rejected |
 | TST-G3-003 | G3 | SEC-007 | Scenario: false positive on critical app | No quarantine |
 | TST-G3-004 | G3 | SEC-021, SEC-022, INV-3 | 200-node fleet, 1 compromised node broadcasts 50 false detections naming benign app | 0 remediation; 50 advisory entries; false-block 0 |
-| TST-G3-005 | G3 | SEC-015, SEC-032 | Partition injection | Fail-closed T2+; T0 continues |
+| TST-G3-005 | G3 | SEC-015, SEC-032 | Partition and reconnect | T0 continues. P2.5 degraded profile denies T2+. Production partition mode only permits scoped leased T2 when all gates pass; verify denial outside those bounds and no overspend on reconnect |
 | TST-G3-006 | G3 | SEC-013, SEC-014 | Replay injection | Replayed messages dropped |
 | TST-G3-007 | G3 | SEC-012 | Peer spoofing | Spoofed peer rejected |
 | TST-G3-008 | G3 | SEC-010, SEC-045 | Cross-tenant access attempt | Denied, no data bleed |
@@ -175,6 +175,8 @@ All metric values are TARGET/HYPOTHESIS until measured with raw data, workload d
 ---
 
 ## 7. Evidence-pack template (enterprise buyer/auditor)
+
+Use the [release qualification and evidence pack](Release_Qualification_and_Evidence_Pack.md) to bind these contents and the rollout decision to a specific candidate and deployment configuration.
 
 Contents:
 1. Executive summary and scope.

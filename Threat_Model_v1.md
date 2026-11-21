@@ -202,7 +202,7 @@ Gates: G1 design review, G2 threat-model review, G3 scenario/adversarial test, G
 | SEC-012 | Mutually attest peers before admission to mesh | H | Attestation handshake tests | G3 |
 | SEC-013 | Enforce freshness, ordering, and idempotency on peer messages | M | Replay/reorder test suite | G3 |
 | SEC-014 | Provide confidentiality and integrity on peer channels | H | Crypto review + MITM test | G3, G4 |
-| SEC-015 | Use partition-safe consensus; fail closed (no action) on partition | H | Chaos/partition test | G3 |
+| SEC-015 | Use partition-safe consensus; deny peer-dependent actions when quorum is unavailable and enforce ARC-009 lease limits for eligible local T2 | H | Chaos/partition test | G3 |
 | SEC-016 | Rate-limit and apply backpressure on mesh traffic | M | Flood test under G3 | G3 |
 | SEC-017 | Require diversity/independence among corroborators; detect clusters | H | Collusion scenario tests | G3 |
 | SEC-018 | Require human approval for high-impact or bulk actions | C | Workflow tests + audit review | G1, G5 |

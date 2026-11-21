@@ -238,12 +238,12 @@ AI outputs are recommendations consumed only by action-proposer, which must prod
 | State | T0 Evidence | T1 Advisory | T2 Containment | T3 Destructive/Recovery | Notes |
 |---|---|---|---|---|---|
 | Online | Allowed (full) | Allowed | Allowed (policy + corroboration + approval) | Allowed (human approval) | Normal operation |
-| Partitioned | Allowed (local + queued sync) | Allowed (local only) | Allowed only for pre-authorised local rules with no external dependency; otherwise denied | Denied (R4 human path) | Peer-dependent T2 denied; fail-closed (ARC-009) |
+| Partitioned | Allowed (local + queued sync) | Allowed (local only) | Allowed only for pre-authorised local actions with a valid scoped lease, remaining budget and all policy gates met without an unavailable dependency | Denied (R4 human path) | Peer-dependent T2 denied; fail-closed (ARC-009) |
 | Fully offline | Allowed (local buffer) | Allowed (local only) | Denied | Denied | Evidence queued for later sync; no network actions |
-| Control plane suspected compromised | Allowed (local + anchor paused) | Allowed (local) | Allowed under cached signed policy + local corroboration; no new fleet actions | Denied unless human-approved locally | Ignore control-plane updates; use last known good signed policy (SEC-022, SEC-030) |
+| Control plane suspected compromised | Allowed (local + anchor paused) | Allowed (local) | Denied | Denied | Ignore control-plane updates; use last known good signed policy (SEC-022, SEC-030) |
 | Node suspected compromised | Allowed (tamper-evident collection) | Denied | Denied (node cannot self-authorise) | Denied | Peers treat node as untrusted; recovery via re-enrolment (human path) |
 
-**R4 (manual) actions always require a human path** (console/API with MFA + approval) regardless of state (ARC-015).
+**R4 (manual) actions always require a documented human path** (ARC-015). Console/API approvals require MFA. When that path is unavailable, the applicable customer runbook governs manual recovery. Fully offline and either suspected-compromise state deny product T2+. See [P2.2 §2](P2.2_Enforcement_Controller_v1.md#2-degraded-operation-and-lease-ownership).
 
 ---
 
@@ -437,13 +437,14 @@ Versions and exact packages are TBD (P0.3/P0.5); categories only here.
 
 ---
 
-## 12. R4 (manual) action human paths (ARC-015)
+## 12. Human approval and manual recovery paths (ARC-015)
 
-| R4 action | Human path |
+| Action | Human path |
 |---|---|
 | Re-enrolment of suspected-compromised node | Console operator (MFA) + approval; documented runbook |
 | Manual rollback of bad update | Release authority (multi-party) + signed rollback instruction |
 | Manual recovery from quarantine | Operator approval via console; policy-engine still gates |
+| A-18 file restore (T3/R3, backup-dependent) | Online product restore requires distinct MFA-authenticated approval, a verified backup and policy/controller authorisation. Otherwise use the approved customer manual recovery path in [P2.2 §3](P2.2_Enforcement_Controller_v1.md#3-a-18-recovery-approval). |
 | Re-imaging host | Local admin + evidence preserved; T0 ledger exported first |
 | Key rotation after compromise | Key ceremony; multi-party signing (SEC-033) |
 

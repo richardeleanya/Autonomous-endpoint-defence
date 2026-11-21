@@ -1,0 +1,26 @@
+x-test-env: &test-env
+  OBSERVE_BOOTSTRAP: ${OBSERVE_BOOTSTRAP:?Generate a disposable bootstrap credential}
+services:
+  api:
+    init: true
+    build: .
+    command: ["python", "-B", "/app/control_plane.py"]
+    environment:
+      <<: *test-env
+      OBSERVE_DB: /state/observe.sqlite
+    volumes:
+      - state:/state
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).close()"]
+      interval: 1s
+      timeout: 3s
+      retries: 10
+  integration-tests:
+    build: .
+    command: ["python", "-B", "/app/test_lifecycle.py", "-v"]
+    environment: *test-env
+networks:
+  default:
+    internal: true
+volumes:
+  state:
