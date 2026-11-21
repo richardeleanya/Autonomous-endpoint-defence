@@ -102,6 +102,16 @@ class Store:
                 ):
                     raise ValueError("Invalid verified activation")
                 key(approval["approval_sha256"])
+                signed_payload = approval.get("signed_payload")
+                expected = {
+                    field: value for field, value in approval.items() if field not in ("signed_payload", "approval_sha256")
+                }
+                if (
+                    not isinstance(signed_payload, str)
+                    or hashlib.sha256(signed_payload.encode("utf-8")).hexdigest() != approval["approval_sha256"]
+                    or json.loads(signed_payload) != expected
+                ):
+                    raise ValueError("Activation metadata differs from the verified signed payload; regenerate it")
                 self.approvals[tenant] = approval
             for subject, digest in settings["operators"].items():
                 self.register(digest, "operator", uid(subject), tenant)
@@ -256,6 +266,25 @@ class Store:
             removed = db.execute("DELETE FROM event WHERE received < ?", (cutoff,)).rowcount
         db.execute("UPDATE customer_account SET retention_floor=MAX(retention_floor,?) WHERE id=1", (cutoff,))
         return {"events_removed": removed, "artifacts_removed": len(files)}
+
+    def apply_scheduled_retention(self, tenant):
+        with self.transaction(tenant) as db:
+            customer = db.execute("SELECT * FROM customer_account WHERE id=1").fetchone()
+            approval = self.approvals.get(tenant)
+            if (
+                customer["privacy_hold"] or not customer["retention_days"] or approval is None
+                or approval["approval_sha256"] != customer["approval_sha256"]
+                or approval["retention_days"] != customer["retention_days"]
+            ):
+                return
+            cutoff = self.cutoff(customer)
+            counts = self.remove_telemetry(db, tenant, cutoff, all_telemetry=False)
+            if any(counts.values()):
+                audit(
+                    db, "worker", "telemetry_retention_scheduled",
+                    f"{cutoff}:{counts['events_removed']}:{counts['artifacts_removed']}",
+                )
+            return counts
 
     def sync_artifacts(self, tenant):
         directory = os.open(self.artifacts / tenant, os.O_RDONLY | os.O_DIRECTORY)

@@ -30,7 +30,7 @@ python3 -B release/verify_customer_approval.py \
   --bundle "$APPROVAL_BUNDLE" --trust-policy "$TENANT_APPROVAL_KEYS" --tenant "$TENANT_UUID"
 ```
 
-Only the successful verifier output goes into the matching tenant's `approved_activation` object in the protected deployment configuration. Customer and operations clients have no write access to that configuration. Protect the key policy and verifier installation as privileged administration inputs. Retain the signed approval bundle and document versions in the restricted case record. The deployment administrator restarts the API and worker after configuration changes. Suspend and use `resume` with current approvals for a renewed active account, providing all three references if changed.
+Only the successful verifier output goes into the matching tenant's `approved_activation` object in the protected deployment configuration. The output retains the exact signed payload alongside its digest. The API and worker reject mismatches between signed bytes and the configured approval fields. Regenerate earlier verifier output before upgrading. Customer and operations clients have no write access to that configuration. Protect the key policy and verifier installation as privileged administration inputs. Retain the signed approval bundle and document versions in the restricted case record. The deployment administrator restarts the API and worker after configuration changes. Suspend and use `resume` with current approvals for a renewed active account, providing all three references if changed.
 
 ### Retention and deletion evidence
 
@@ -39,7 +39,7 @@ Configure a distinct `privacy_operations` staff principal map using the same UUI
 | Operation | Behaviour and evidence |
 |---|---|
 | `privacy-hold` | Supply `case_ref` and boolean `held`. An active hold blocks the other privacy operations and is recorded in the audit. |
-| `retain-telemetry` | Supply the authorised `case_ref`. Removes live heartbeat rows older than the signed retention cutoff and invalidates local artifacts containing expired telemetry. Fresh telemetry is preserved. Run this operation on the approved schedule. |
+| `retain-telemetry` | Supply the authorised `case_ref`. Removes live heartbeat rows older than the signed retention cutoff and invalidates local artifacts containing expired telemetry. Fresh telemetry is preserved. Use this operation for a case-driven sweep. The worker also applies the last activated, matching verified retention policy at startup and hourly, preserving records under a hold. It audits scheduled removals with the cutoff and row and file counts. |
 | `erase-telemetry` | Supply the disposition `case_ref` after terminal offboarding and approved usage closeout. Removes local telemetry, inventory, job data and associated local artifacts. A retry reports what it removed during that invocation. |
 
 Export reads and restores enforce the effective cutoff even before the physical removal step. Persist the response, case reference, cutoff, affected store counts and audit action in the restricted evidence record. An unclassified artifact or storage failure requires investigation and re-verification before recording completion. The tenant-level retention floor protects against bringing expired telemetry back from an old artifact.
@@ -78,4 +78,4 @@ The Docker drill exercised default denial, scoped grant, allowed inventory read,
 
 The Docker drill exercised suspension, queued work cancellation, credential revocation during suspension, resumption, stale credential denial, audit checks and a separate telemetry restore. Live paging, regulator or customer notification, and full hosted disaster recovery require authorised operational exercises.
 
-Run the local drills with [the Docker qualification command](README.md#build-sign-and-qualify). The tests use synthetic authorisation references and distinct disposable lab signing keys. The tests verify rejection of tampered signatures, expired artifact restore, hold enforcement, local deletion and a zero-removal retry. Customer rollout requires the actual signed approvals and remaining release evidence in the [qualification pack](../Release_Qualification_and_Evidence_Pack.md).
+Run the local drills with [the Docker qualification command](README.md#build-sign-and-qualify). The tests use synthetic authorisation references and distinct disposable lab signing keys. The tests verify rejection of tampered signatures and altered activation metadata, expired artifact restore, holds on scheduled and manual deletion, audit evidence, local deletion and a zero-removal retry. Customer rollout requires the actual signed approvals and remaining release evidence in the [qualification pack](../Release_Qualification_and_Evidence_Pack.md).

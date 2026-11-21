@@ -1,5 +1,6 @@
 """Black-box qualification of the deployable API, native Linux agent and job worker."""
 
+import hashlib
 import json
 import os
 import secrets
@@ -29,11 +30,13 @@ PROVISION = {
 
 
 def lab_activation(tenant):
-    return {
+    fields = {
         **{key: value for key, value in PROVISION.items() if key != "max_endpoints"},
-        "tenant": tenant, "mode": "observe-only", "retention_days": 30,
-        "approval_sha256": "a" * 64, "expires_at": int(time.time()) + 1800,
+        "version": 1, "tenant": tenant, "mode": "observe-only", "retention_days": 30,
+        "expires_at": int(time.time()) + 1800,
     }
+    payload = json.dumps(fields)
+    return {**fields, "signed_payload": payload, "approval_sha256": hashlib.sha256(payload.encode()).hexdigest()}
 
 
 class ProductIsolation(unittest.TestCase):
@@ -334,6 +337,38 @@ class ProductIsolation(unittest.TestCase):
                 self.assertEqual([row["id"] for row in db.execute("SELECT id FROM event")], [current])
                 self.assertFalse(store.artifact_path(tenant, backup, "backup").exists())
             print("PASS expiry blocks restore and retention removes only expired telemetry and affected artifacts", flush=True)
+
+    def test_changed_activation_and_scheduled_retention_under_hold(self):
+        tenant, device, event = (str(uuid4()) for _ in range(3))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "config.json"
+            activation = lab_activation(tenant)
+            settings = {"backup_key": secrets.token_hex(32), "operators": {}, "approved_activation": activation}
+            configuration = {"tenants": {tenant: settings}, "support": {}}
+            settings["approved_activation"] = {**activation, "expires_at": activation["expires_at"] + 60}
+            config.write_text(json.dumps(configuration))
+            with self.assertRaisesRegex(ValueError, "differs from the verified signed payload"):
+                Store(config, root, root / "artifacts")
+            settings["approved_activation"] = activation
+            config.write_text(json.dumps(configuration))
+            store = Store(config, root, root / "artifacts")
+            with store.transaction(tenant) as db:
+                operations_route(db, "ops", "provision", PROVISION, store.approvals[tenant])
+                db.execute("INSERT INTO device VALUES (?, 'linux', 'amd64', NULL, 'active')", (device,))
+                db.execute("INSERT INTO event VALUES (?, ?, '0.1.0', 1)", (event, device))
+                privacy_route(db, store, tenant, "privacy", "privacy-hold", {"case_ref": "LAB-HOLD", "held": True})
+            self.assertIsNone(store.apply_scheduled_retention(tenant))
+            with store.transaction(tenant) as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM event").fetchone()[0], 1)
+                privacy_route(db, store, tenant, "privacy", "privacy-hold", {"case_ref": "LAB-RELEASE", "held": False})
+            self.assertEqual(store.apply_scheduled_retention(tenant), {"events_removed": 1, "artifacts_removed": 0})
+            self.assertEqual(store.apply_scheduled_retention(tenant), {"events_removed": 0, "artifacts_removed": 0})
+            with store.transaction(tenant) as db:
+                self.assertEqual(db.execute(
+                    "SELECT COUNT(*) FROM audit WHERE action='telemetry_retention_scheduled'"
+                ).fetchone()[0], 1)
+            print("PASS changed activation metadata rejected; scheduled retention respects holds and records removals", flush=True)
 
     def request(self, tenant, path, expected, body, token):
         data = json.dumps(body).encode() if body is not None else None

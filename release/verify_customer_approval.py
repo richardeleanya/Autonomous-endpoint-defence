@@ -41,7 +41,7 @@ def verify(bundle, trust, tenant):
         and type(record["expires_at"]) is int and int(time.time()) < record["expires_at"] < 2**63,
         "Approval must have a finite retention policy and current validity",
     )
-    return {**record, "approval_sha256": hashlib.sha256(raw).hexdigest()}
+    return {**record, "approval_sha256": hashlib.sha256(raw).hexdigest(), "signed_payload": raw.decode("utf-8")}
 
 
 def main():
